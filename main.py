@@ -7,6 +7,7 @@ Created on Fri May 29 14:21:24 2020
 
 import numpy as np
 import queue
+import collections
 import cv2 as cv
 
 class Node:
@@ -34,40 +35,66 @@ class Mesh:
         
 class MeshMaker:
     def __init__(self, image):
-        self.image = cv.resize(np.array(image,dtype="uint8"), (250,250),interpolation = cv.INTER_NEAREST)
-        self.mesh = Mesh()
-        self.q = queue.Queue()
+        self.image = image
+        self.mesh = Mesh()     # Processed nodes
+        self.q = collections.deque() # Nodes to be processed
         
         self.pixel_blue = np.array([255,0,0],dtype="uint8")
         self.pixel_red = np.array([0,0,255],dtype="uint8")
+        self.pixel_orange = np.array([0,165,255],dtype="uint8")
         
     def solveNextNode(self):
-        current_node = self.q.get()
+        current_node = self.q.popleft()
         current_position = current_node.getPosition()
-        self.image[current_position[0],current_position[1]] = self.pixel_blue #set node to "blue" color to know it is complete
         surroundings = self.getSurroundings(current_position)
         for position in surroundings:
-            new_node = Node(position)
+            if self.isPositionInQueue(position):
+                new_node = self.getPendingNode(position) #get node if it aready exists
+            else:
+                new_node = Node(position)
             new_node.addConnection(current_node)
             current_node.addConnection(new_node)
-            self.q.put(new_node)
+            if not self.isPositionInQueue(position) and isPixelWhite(self.image[position[0],position[1]]):
+                self.addToQueue(new_node)
+                self.image[position[0],position[1]] = self.pixel_orange
+        self.image[current_position[0],current_position[1]] = self.pixel_blue
         self.mesh.addNode(current_node)
-            
+    
+    def addToQueue(self, node):
+        self.q.append(node)
         
-    def makeMesh(self):
+    
+    def isPositionInQueue(self, position):
+        for pending_node in list(self.q):
+            if pending_node.getPosition() == position:
+                return True
+            else:
+                pass
+        return False
+    
+    def getPendingNode(self, position):
+        for pending_node in list(self.q):
+            if pending_node.getPosition() == position:
+                return pending_node
+        
+    
+    def makeMesh(self, viz=False, delay=1):
+        # 
         position = findStartPosition(self.image)
         first_node = Node(position)
-        self.q.put(first_node)
-        while not self.q.empty():
+        self.addToQueue(first_node)
+        while not len(self.q) == 0:
             self.solveNextNode()
-            self.showImage()
-            #print("solving node")
-        #print("finished mesh")
+            if viz == True:
+                self.showImage(delay)
+        cv.waitKey(0)
         cv.destroyAllWindows()
         
-    def showImage(self):
-        cv.imshow("Image", self.image)
-        cv.waitKey(1)
+        
+    def showImage(self, delay):
+        image = cv.resize(self.image, (250,250),interpolation = cv.INTER_NEAREST)
+        cv.imshow("Image", image)
+        cv.waitKey(delay)
 
 
     def getSurroundings(self, uv):
@@ -82,9 +109,9 @@ class MeshMaker:
                 for j in range(3):
                     vn = (v - 1) + j    
                     if (0 <= vn < width):
-                        if ([un,vn] != [u,v]) and isPixelWhite(self.image[un][vn]):
+                        if ([un,vn] != [u,v]) and not isPixelBlack(self.image[un][vn]) and not isPixelBlue(self.image[un][vn]):
                             surroundings.append([un,vn])
-                            self.image[un,vn] = self.pixel_red
+                            #self.image[un,vn] = self.pixel_red
                     else:
                         pass
             else:
@@ -104,6 +131,16 @@ def findStartPosition(image):
         u+=1
     return None 
 
+def isPixelBlue(pixel):
+    blue = [255,0,0]
+    mypixel = []
+    for item in pixel:
+        mypixel.append(item)
+    if mypixel == blue:
+        return True
+    else:
+        return False
+
 def isPixelWhite(pixel):
     for item in pixel:
         if item != 255:
@@ -117,10 +154,14 @@ def isPixelBlack(pixel):
     return True
 
 if __name__=="__main__":
-    image = [[[255,255,255],[255,255,255],[255,255,255]],
+    image1 = [[[255,255,255],[255,255,255],[255,255,255]],
              [[255,255,255],   [0,0,0],   [255,255,255]],
              [[255,255,255],[255,255,255],[255,255,255]]]
-    image = cv.imread("map2.png")
-    mm = MeshMaker(image)
-    mm.makeMesh()
+    image1 = np.array(image1,dtype="uint8")
+    
+    image2 = cv.imread("map.png")
+    image2 = cv.resize(image2, (250,250),interpolation = cv.INTER_NEAREST)
+    
+    mm = MeshMaker(image2)
+    mm.makeMesh(viz=True)
     
